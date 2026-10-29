@@ -10,14 +10,12 @@
         /* Top Menu Bar */
         #menubar { height: 35px; background: #222; border-bottom: 1px solid #333; display: flex; align-items: center; padding: 0 15px; justify-content: space-between; font-size: 13px; }
         .menu-group { display: flex; gap: 15px; align-items: center; }
-        .menu-item { cursor: pointer; color: #aaa; }
-        .menu-item:hover { color: #fff; }
         .badge { background: #007acc; color: #fff; padding: 2px 6px; border-radius: 3px; font-size: 11px; font-weight: bold; }
 
         /* Main Workspace Layout */
         #workspace { display: flex; flex: 1; overflow: hidden; }
         
-        /* Left Sidebar: Surface Tree */
+        /* Left Sidebar */
         #sidebar-left { width: 260px; background: #202020; border-right: 1px solid #333; display: flex; flex-direction: column; }
         .panel-header { padding: 10px 12px; background: #282828; font-size: 12px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
         .surface-tree { flex: 1; overflow-y: auto; padding: 8px; }
@@ -26,7 +24,7 @@
         
         /* Center Canvas Workspace */
         #viewport-container { flex: 1; position: relative; background: #121212; display: flex; justify-content: center; align-items: center; overflow: hidden; }
-        canvas { display: block; background: #0a0a0a; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
+        canvas { display: block; background: #0a0a0a; box-shadow: 0 0 20px rgba(0,0,0,0.8); cursor: crosshair; }
 
         /* Right Sidebar: Property Inspector */
         #sidebar-right { width: 300px; background: #202020; border-left: 1px solid #333; display: flex; flex-direction: column; padding: 12px; overflow-y: auto; }
@@ -61,20 +59,16 @@
 
     <!-- Main Workspace -->
     <div id="workspace">
-        <!-- Left: Surfaces & Shapes -->
+        <!-- Left: Shapes & Surfaces -->
         <div id="sidebar-left">
-            <div class="panel-header">
-                <span>Add New Shape</span>
-            </div>
+            <div class="panel-header"><span>Add New Shape</span></div>
             <div style="padding: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
                 <button id="addSquareBtn">+ Square</button>
                 <button id="addTriangleBtn">+ Triangle</button>
                 <button id="addCircleBtn">+ Circle</button>
                 <button id="addRandomBtn">+ Random</button>
             </div>
-            <div class="panel-header" style="border-top: 1px solid #333;">
-                <span>Active Surfaces</span>
-            </div>
+            <div class="panel-header" style="border-top: 1px solid #333;"><span>Active Surfaces</span></div>
             <div class="surface-tree" id="surfaceList"></div>
         </div>
 
@@ -150,13 +144,12 @@
             dtCtx.beginPath(); dtCtx.arc(256, 330, 45, 0, Math.PI * 2); dtCtx.fill();
         }
 
-        // Project State: Supports flexible vertex arrays per shape
         let surfaces = [
             {
                 id: 1,
                 name: "Square Surface",
                 type: "Square",
-                vertices: [[100, 100], [400, 100], [100, 400], [400, 400]], // Quad triangle strip layout
+                vertices: [[150, 150], [450, 150], [150, 450], [450, 450]],
                 texCoords: [[0,0], [1,0], [0,1], [1,1]],
                 opacity: 1.0,
                 mediaName: "Default Procedural",
@@ -166,7 +159,7 @@
             }
         ];
         let activeSurfaceId = 1;
-        let selectedVertex = null; // { sIdx, vIdx }
+        let interactionMode = null; // { type: 'vertex', sIdx, vIdx } or { type: 'shape', sIdx, startX, startY, origVertices }
 
         surfaces.forEach(s => {
             gl.bindTexture(gl.TEXTURE_2D, s.texture);
@@ -198,7 +191,7 @@
 
             let coordsHtml = '';
             s.vertices.forEach((v, idx) => {
-                coordsHtml += `Vertex ${idx + 1}: ${Math.round(v[0])}, ${Math.round(v[1])}<br>`;
+                coordsHtml += `Node ${idx + 1}: ${Math.round(v[0])}, ${Math.round(v[1])}<br>`;
             });
 
             insp.innerHTML = `
@@ -219,8 +212,9 @@
                     <input type="range" id="opacityInput" min="0" max="1" step="0.05" value="${s.opacity}">
                 </div>
                 <div class="control-group">
-                    <label>Vertex Coordinates (Drag nodes on canvas)</label>
-                    <div style="font-size: 11px; color: #aaa; font-family: monospace;">${coordsHtml}</div>
+                    <label>Relocation / Vertices</label>
+                    <div style="font-size: 11px; color: #aaa; margin-bottom: 5px;">Tip: Drag inside a shape to move/relocate it, or drag corner nodes to warp.</div>
+                    <div style="font-size: 11px; color: #0ff; font-family: monospace;">${coordsHtml}</div>
                 </div>
             `;
 
@@ -229,7 +223,6 @@
             document.getElementById('changeMediaBtn').onclick = () => { document.getElementById('mediaInput').click(); };
         }
 
-        // Shape Generators
         function addShape(type) {
             const newId = surfaces.length > 0 ? Math.max(...surfaces.map(item => item.id)) + 1 : 1;
             const newTex = gl.createTexture();
@@ -241,34 +234,26 @@
             let vertices, texCoords, name;
             if (type === 'Square') {
                 name = `Square ${newId}`;
-                vertices = [[150, 150], [450, 150], [150, 450], [450, 450]];
+                vertices = [[200, 200], [500, 200], [200, 500], [500, 500]];
                 texCoords = [[0,0], [1,0], [0,1], [1,1]];
             } else if (type === 'Triangle') {
                 name = `Triangle ${newId}`;
-                vertices = [[300, 150], [150, 450], [450, 450]];
+                vertices = [[350, 180], [200, 480], [500, 480]];
                 texCoords = [[0.5, 0], [0, 1], [1, 1]];
             } else if (type === 'Circle') {
                 name = `Circle / Disc ${newId}`;
-                // Approximate circle disc with triangle fan or polygon vertices
-                vertices = [[300, 300], [300, 180], [380, 220], [420, 300], [380, 380], [300, 420], [220, 380], [180, 300], [220, 220]];
-                texCoords = vertices.map(v => [(v[0]-180)/240, (v[1]-180)/240]);
+                vertices = [[350, 350], [350, 220], [430, 260], [470, 350], [430, 440], [350, 480], [270, 440], [230, 350], [270, 260]];
+                texCoords = vertices.map(v => [(v[0]-230)/240, (v[1]-220)/260]);
             } else if (type === 'Random') {
                 name = `Random Polygon ${newId}`;
-                vertices = [[200, 200], [420, 160], [500, 380], [350, 480], [160, 400]];
-                texCoords = vertices.map(v => [(v[0]-160)/340, (v[1]-160)/320]);
+                vertices = [[250, 250], [480, 200], [550, 420], [400, 520], [200, 440]];
+                texCoords = vertices.map(v => [(v[0]-200)/350, (v[1]-200)/320]);
             }
 
             surfaces.push({
-                id: newId,
-                name,
-                type,
-                vertices,
-                texCoords,
-                opacity: 1.0,
-                mediaName: "Default Procedural",
-                mediaType: "default",
-                mediaElement: defaultTexCanvas,
-                texture: newTex
+                id: newId, name, type, vertices, texCoords,
+                opacity: 1.0, mediaName: "Default Procedural", mediaType: "default",
+                mediaElement: defaultTexCanvas, texture: newTex
             });
             activeSurfaceId = newId;
             updateUI();
@@ -292,40 +277,80 @@
                 vid.src = url; vid.loop = true; vid.muted = true; vid.autoplay = true; vid.play();
                 s.mediaType = 'video'; s.mediaElement = vid;
             } else if (file.type.startsWith('image/')) {
-                const img = new Image();
-                img.src = url;
+                const img = new Image(); img.src = url;
                 s.mediaType = 'image'; s.mediaElement = img;
             }
             updateInspector();
         };
 
-        // Mouse Node Dragging for Freeform Reshaping
+        // Point-in-polygon helper for whole-shape dragging (relocation)
+        function isPointInPolygon(pt, vs) {
+            let x = pt[0], y = pt[1];
+            let inside = false;
+            for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+                let xi = vs[i][0], yi = vs[i][1];
+                let xj = vs[j][0], yj = vs[j][1];
+                let intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+                if (intersect) inside = !inside;
+            }
+            return inside;
+        }
+
         canvas.addEventListener('mousedown', (e) => {
             const rect = canvas.getBoundingClientRect();
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
 
+            // 1. Check if clicking a specific vertex node first (for warping)
+            let foundVertex = false;
             surfaces.forEach((s, sIdx) => {
                 s.vertices.forEach((v, vIdx) => {
-                    if (Math.hypot(v[0] - mouseX, v[1] - mouseY) < 22) {
+                    if (Math.hypot(v[0] - mouseX, v[1] - mouseY) < 25) {
                         activeSurfaceId = s.id;
-                        selectedVertex = { sIdx, vIdx };
+                        interactionMode = { type: 'vertex', sIdx, vIdx };
+                        foundVertex = true;
                         updateUI();
                     }
                 });
             });
+            if (foundVertex) return;
+
+            // 2. Check if clicking inside a shape to relocate the whole shape
+            for (let sIdx = surfaces.length - 1; sIdx >= 0; sIdx--) {
+                const s = surfaces[sIdx];
+                if (isPointInPolygon([mouseX, mouseY], s.vertices)) {
+                    activeSurfaceId = s.id;
+                    interactionMode = {
+                        type: 'shape',
+                        sIdx,
+                        startX: mouseX,
+                        startY: mouseY,
+                        origVertices: s.vertices.map(v => [...v])
+                    };
+                    updateUI();
+                    return;
+                }
+            }
         });
 
         window.addEventListener('mousemove', (e) => {
-            if (!selectedVertex) return;
+            if (!interactionMode) return;
             const rect = canvas.getBoundingClientRect();
             const mouseX = Math.max(0, Math.min(canvas.width, e.clientX - rect.left));
             const mouseY = Math.max(0, Math.min(canvas.height, e.clientY - rect.top));
-            surfaces[selectedVertex.sIdx].vertices[selectedVertex.vIdx] = [mouseX, mouseY];
+
+            if (interactionMode.type === 'vertex') {
+                surfaces[interactionMode.sIdx].vertices[interactionMode.vIdx] = [mouseX, mouseY];
+            } else if (interactionMode.type === 'shape') {
+                const dx = mouseX - interactionMode.startX;
+                const dy = mouseY - interactionMode.startY;
+                const s = surfaces[interactionMode.sIdx];
+                s.vertices = interactionMode.origVertices.map(v => [v[0] + dx, v[1] + dy]);
+            }
             updateInspector();
         });
 
-        window.addEventListener('mouseup', () => { selectedVertex = null; });
+        window.addEventListener('mouseup', () => { interactionMode = null; });
 
         // Fullscreen Output Mode
         document.getElementById('toggleOutputBtn').onclick = () => {
@@ -355,8 +380,6 @@
                     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, defaultTexCanvas);
                 }
 
-                // Convert vertices & texcoords into flat triangulation buffers
-                // Supports Quads (Triangle Strip) and Polygons/Circles/Triangles via Triangle Fan decomposition around center
                 let drawMode = gl.TRIANGLE_STRIP;
                 let flatPos = [];
                 let flatTex = [];
@@ -368,7 +391,6 @@
                     flatPos = [s.vertices[0][0],s.vertices[0][1], s.vertices[1][0],s.vertices[1][1], s.vertices[2][0],s.vertices[2][1]];
                     flatTex = [0.5,0, 0,1, 1,1];
                 } else {
-                    // Triangle Fan for Circles and Random Polygons
                     drawMode = gl.TRIANGLES;
                     const centerV = [
                         s.vertices.reduce((sum, v) => sum + v[0], 0) / s.vertices.length,
@@ -389,12 +411,10 @@
 
                 const posAttr = gl.getAttribLocation(program, "a_position");
                 gl.enableVertexAttribArray(posAttr);
-                gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
                 gl.vertexAttribPointer(posAttr, 2, gl.FLOAT, false, 0, 0);
 
                 const texAttr = gl.getAttribLocation(program, "a_texCoord");
                 gl.enableVertexAttribArray(texAttr);
-                gl.bindBuffer(gl.ARRAY_BUFFER, texBuffer);
                 gl.vertexAttribPointer(texAttr, 2, gl.FLOAT, false, 0, 0);
 
                 gl.drawArrays(drawMode, 0, flatPos.length / 2);
