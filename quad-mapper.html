@@ -24,7 +24,7 @@
         
         /* Center Canvas Workspace */
         #viewport-container { flex: 1; position: relative; background: #121212; display: flex; justify-content: center; align-items: center; overflow: hidden; }
-        canvas { display: block; background: #0a0a0a; box-shadow: 0 0 20px rgba(0,0,0,0.8); cursor: crosshair; }
+        canvas { display: block; background: #1a1a1a; box-shadow: 0 0 20px rgba(0,0,0,0.8); cursor: crosshair; }
 
         /* Right Sidebar: Property Inspector */
         #sidebar-right { width: 300px; background: #202020; border-left: 1px solid #333; display: flex; flex-direction: column; padding: 12px; overflow-y: auto; }
@@ -96,6 +96,8 @@
         const gl = canvas.getContext('webgl');
         if (!gl) alert('WebGL not supported!');
 
+        gl.viewport(0, 0, canvas.width, canvas.height);
+
         const vsSource = `
             attribute vec2 a_position;
             attribute vec2 a_texCoord;
@@ -128,21 +130,21 @@
         gl.linkProgram(program);
         gl.useProgram(program);
 
-        // Immediate procedural texture canvas setup
+        // Procedural Texture Canvas
         const defaultTexCanvas = document.createElement('canvas');
         defaultTexCanvas.width = 512; defaultTexCanvas.height = 512;
         const dtCtx = defaultTexCanvas.getContext('2d');
 
         function updateDefaultTexture() {
-            dtCtx.fillStyle = '#1e1e1e'; 
+            dtCtx.fillStyle = '#222222'; 
             dtCtx.fillRect(0, 0, 512, 512);
             
             dtCtx.strokeStyle = '#00ffff'; 
-            dtCtx.lineWidth = 14;
+            dtCtx.lineWidth = 16;
             dtCtx.strokeRect(20, 20, 472, 472);
 
             dtCtx.fillStyle = '#ff00ff';
-            dtCtx.font = 'bold 40px sans-serif';
+            dtCtx.font = 'bold 42px sans-serif';
             dtCtx.textAlign = 'center';
             dtCtx.fillText("मारवाड़ DJ", 256, 230);
 
@@ -151,7 +153,7 @@
             dtCtx.arc(256, 330, 45, 0, Math.PI * 2); 
             dtCtx.fill();
         }
-        updateDefaultTexture(); // Render immediately on load
+        updateDefaultTexture();
 
         let surfaces = [
             {
@@ -170,6 +172,8 @@
         let activeSurfaceId = 1;
         let interactionMode = null;
 
+        // Initialize textures properly with FLIP_Y
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
         surfaces.forEach(s => {
             gl.bindTexture(gl.TEXTURE_2D, s.texture);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -374,11 +378,12 @@
 
         function render() {
             updateDefaultTexture();
-            gl.clearColor(0.08, 0.08, 0.08, 1.0);
+            gl.clearColor(0.1, 0.1, 0.1, 1.0);
             gl.clear(gl.COLOR_BUFFER_BIT);
 
             surfaces.forEach(s => {
                 gl.bindTexture(gl.TEXTURE_2D, s.texture);
+                gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
                 if (s.mediaType === 'video' && s.mediaElement.readyState >= 2) {
                     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, s.mediaElement);
                 } else if (s.mediaType === 'image' && s.mediaElement.complete) {
@@ -422,7 +427,6 @@
 
                 const texAttr = gl.getAttribLocation(program, "a_texCoord");
                 gl.enableVertexAttribArray(texAttr);
-                gl.bindBuffer(gl.ARRAY_BUFFER, texBuffer);
                 gl.vertexAttribPointer(texAttr, 2, gl.FLOAT, false, 0, 0);
 
                 gl.drawArrays(drawMode, 0, flatPos.length / 2);
