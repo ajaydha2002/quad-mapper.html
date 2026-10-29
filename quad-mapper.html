@@ -16,18 +16,18 @@
         #workspace { display: flex; flex: 1; overflow: hidden; }
         
         /* Left Sidebar */
-        #sidebar-left { width: 260px; background: #202020; border-right: 1px solid #333; display: flex; flex-direction: column; }
-        .panel-header { padding: 10px 12px; background: #282828; font-size: 12px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
+        #sidebar-left { width: 260px; background: #202020; border-right: 1px solid #333; display: flex; flex-direction: column; z-index: 10; }
+        .panel-header { padding: 10px 12px; background: #282828; font-size: 12px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #333; }
         .surface-tree { flex: 1; overflow-y: auto; padding: 8px; }
         .tree-item { padding: 8px 10px; margin-bottom: 4px; background: #2a2a2a; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-size: 13px; border-left: 3px solid #555; }
         .tree-item.active { background: #333; border-left-color: #007acc; color: #fff; }
         
         /* Center Canvas Workspace */
         #viewport-container { flex: 1; position: relative; background: #121212; display: flex; justify-content: center; align-items: center; overflow: hidden; }
-        canvas { display: block; background: #1a1a1a; box-shadow: 0 0 20px rgba(0,0,0,0.8); cursor: crosshair; }
+        canvas { display: block; width: 100%; height: 100%; background: #151515; cursor: crosshair; }
 
         /* Right Sidebar: Property Inspector */
-        #sidebar-right { width: 300px; background: #202020; border-left: 1px solid #333; display: flex; flex-direction: column; padding: 12px; overflow-y: auto; }
+        #sidebar-right { width: 300px; background: #202020; border-left: 1px solid #333; display: flex; flex-direction: column; padding: 12px; overflow-y: auto; z-index: 10; }
         .control-group { margin-bottom: 15px; }
         .control-group label { display: block; font-size: 11px; color: #888; margin-bottom: 5px; text-transform: uppercase; }
         .control-group input, .control-group select { width: 100%; background: #2a2a2a; border: 1px solid #444; color: #fff; padding: 6px 8px; border-radius: 4px; font-size: 13px; }
@@ -39,7 +39,7 @@
         button.primary:hover { background: #0086e6; }
 
         /* Fullscreen Output Overlay */
-        #output-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vw; background: #000; z-index: 9999; display: none; }
+        #output-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #000; z-index: 9999; display: none; }
         #output-overlay canvas { width: 100% !important; height: 100% !important; }
         #exit-output { position: fixed; top: 20px; right: 20px; z-index: 10000; background: rgba(0,0,0,0.7); border: 1px solid #666; color: #fff; padding: 8px 16px; border-radius: 4px; cursor: pointer; display: none; }
     </style>
@@ -59,7 +59,6 @@
 
     <!-- Main Workspace -->
     <div id="workspace">
-        <!-- Left: Shapes & Surfaces -->
         <div id="sidebar-left">
             <div class="panel-header"><span>Add New Shape</span></div>
             <div style="padding: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
@@ -72,12 +71,10 @@
             <div class="surface-tree" id="surfaceList"></div>
         </div>
 
-        <!-- Center: Interactive Viewport -->
         <div id="viewport-container">
-            <canvas id="glCanvas" width="1024" height="768"></canvas>
+            <canvas id="glCanvas"></canvas>
         </div>
 
-        <!-- Right: Property Inspector -->
         <div id="sidebar-right">
             <div class="panel-header" style="margin-bottom: 12px;">Inspector</div>
             <div id="inspectorContent">
@@ -86,7 +83,6 @@
         </div>
     </div>
 
-    <!-- Fullscreen Output Overlay -->
     <div id="output-overlay"></div>
     <button id="exit-output">Exit Fullscreen Output</button>
     <input type="file" id="mediaInput" accept="image/*,video/*" style="display:none">
@@ -96,14 +92,21 @@
         const gl = canvas.getContext('webgl');
         if (!gl) alert('WebGL not supported!');
 
-        gl.viewport(0, 0, canvas.width, canvas.height);
+        function resizeCanvas() {
+            canvas.width = canvas.clientWidth;
+            canvas.height = canvas.clientHeight;
+            gl.viewport(0, 0, canvas.width, canvas.height);
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
 
         const vsSource = `
             attribute vec2 a_position;
             attribute vec2 a_texCoord;
+            uniform vec2 u_resolution;
             varying vec2 v_texCoord;
             void main() {
-                vec2 clipSpace = (a_position / vec2(1024.0, 768.0)) * 2.0 - 1.0;
+                vec2 clipSpace = (a_position / u_resolution) * 2.0 - 1.0;
                 gl_Position = vec4(clipSpace * vec2(1, -1), 0.0, 1.0);
                 v_texCoord = a_texCoord;
             }
@@ -130,13 +133,15 @@
         gl.linkProgram(program);
         gl.useProgram(program);
 
+        const uResolutionLoc = gl.getUniformLocation(program, "u_resolution");
+
         // Procedural Texture Canvas
         const defaultTexCanvas = document.createElement('canvas');
         defaultTexCanvas.width = 512; defaultTexCanvas.height = 512;
         const dtCtx = defaultTexCanvas.getContext('2d');
 
         function updateDefaultTexture() {
-            dtCtx.fillStyle = '#222222'; 
+            dtCtx.fillStyle = '#1e1e24'; 
             dtCtx.fillRect(0, 0, 512, 512);
             
             dtCtx.strokeStyle = '#00ffff'; 
@@ -155,32 +160,32 @@
         }
         updateDefaultTexture();
 
+        function createGLTexture() {
+            const tex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, defaultTexCanvas);
+            return tex;
+        }
+
         let surfaces = [
             {
                 id: 1,
                 name: "Square Surface",
                 type: "Square",
-                vertices: [[150, 150], [450, 150], [150, 450], [450, 450]],
+                vertices: [[100, 100], [400, 100], [100, 400], [400, 400]],
                 texCoords: [[0,0], [1,0], [0,1], [1,1]],
                 opacity: 1.0,
                 mediaName: "Default Procedural",
                 mediaType: "default",
                 mediaElement: defaultTexCanvas,
-                texture: gl.createTexture()
+                texture: createGLTexture()
             }
         ];
         let activeSurfaceId = 1;
         let interactionMode = null;
-
-        // Initialize textures properly with FLIP_Y
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-        surfaces.forEach(s => {
-            gl.bindTexture(gl.TEXTURE_2D, s.texture);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, s.mediaElement);
-        });
 
         function updateUI() {
             const listEl = document.getElementById('surfaceList');
@@ -222,53 +227,44 @@
                     <button id="changeMediaBtn">📁 Choose Media File</button>
                 </div>
                 <div class="control-group">
-                    <label>Opacity (${Math.round(s.opacity * 100)}%)</label>
-                    <input type="range" id="opacityInput" min="0" max="1" step="0.05" value="${s.opacity}">
-                </div>
-                <div class="control-group">
                     <label>Relocation / Vertices</label>
-                    <div style="font-size: 11px; color: #aaa; margin-bottom: 5px;">Tip: Drag inside a shape to move/relocate it, or drag corner nodes to warp.</div>
+                    <div style="font-size: 11px; color: #aaa; margin-bottom: 5px;">Drag inside shape to move, or drag corners to warp.</div>
                     <div style="font-size: 11px; color: #0ff; font-family: monospace;">${coordsHtml}</div>
                 </div>
             `;
 
             document.getElementById('surfNameInput').oninput = (e) => { s.name = e.target.value; updateUI(); };
-            document.getElementById('opacityInput').oninput = (e) => { s.opacity = parseFloat(e.target.value); };
             document.getElementById('changeMediaBtn').onclick = () => { document.getElementById('mediaInput').click(); };
         }
 
         function addShape(type) {
             const newId = surfaces.length > 0 ? Math.max(...surfaces.map(item => item.id)) + 1 : 1;
-            const newTex = gl.createTexture();
-            gl.bindTexture(gl.TEXTURE_2D, newTex);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, defaultTexCanvas);
-
             let vertices, texCoords, name;
+            const cx = 200 + (surfaces.length * 30) % 300;
+            const cy = 200 + (surfaces.length * 30) % 200;
+
             if (type === 'Square') {
                 name = `Square ${newId}`;
-                vertices = [[200, 200], [500, 200], [200, 500], [500, 500]];
+                vertices = [[cx, cy], [cx + 250, cy], [cx, cy + 250], [cx + 250, cy + 250]];
                 texCoords = [[0,0], [1,0], [0,1], [1,1]];
             } else if (type === 'Triangle') {
                 name = `Triangle ${newId}`;
-                vertices = [[350, 180], [200, 480], [500, 480]];
+                vertices = [[cx + 125, cy], [cx, cy + 250], [cx + 250, cy + 250]];
                 texCoords = [[0.5, 0], [0, 1], [1, 1]];
             } else if (type === 'Circle') {
-                name = `Circle / Disc ${newId}`;
-                vertices = [[350, 350], [350, 220], [430, 260], [470, 350], [430, 440], [350, 480], [270, 440], [230, 350], [270, 260]];
-                texCoords = vertices.map(v => [(v[0]-230)/240, (v[1]-220)/260]);
+                name = `Circle ${newId}`;
+                vertices = [[cx+125, cy+125], [cx+125, cy], [cx+210, cy+40], [cx+250, cy+125], [cx+210, cy+210], [cx+125, cy+250], [cx+40, cy+210], [cx, cy+125], [cx+40, cy+40]];
+                texCoords = vertices.map(v => [(v[0]-cx)/250, (v[1]-cy)/250]);
             } else if (type === 'Random') {
-                name = `Random Polygon ${newId}`;
-                vertices = [[250, 250], [480, 200], [550, 420], [400, 520], [200, 440]];
-                texCoords = vertices.map(v => [(v[0]-200)/350, (v[1]-200)/320]);
+                name = `Polygon ${newId}`;
+                vertices = [[cx, cy+50], [cx+200, cy], [cx+260, cy+200], [cx+120, cy+270], [cx+20, cy+180]];
+                texCoords = vertices.map(v => [(v[0]-cx)/260, (v[1]-cy)/270]);
             }
 
             surfaces.push({
                 id: newId, name, type, vertices, texCoords,
                 opacity: 1.0, mediaName: "Default Procedural", mediaType: "default",
-                mediaElement: defaultTexCanvas, texture: newTex
+                mediaElement: defaultTexCanvas, texture: createGLTexture()
             });
             activeSurfaceId = newId;
             updateUI();
@@ -378,12 +374,16 @@
 
         function render() {
             updateDefaultTexture();
-            gl.clearColor(0.1, 0.1, 0.1, 1.0);
+            gl.clearColor(0.08, 0.08, 0.08, 1.0);
             gl.clear(gl.COLOR_BUFFER_BIT);
 
+            gl.uniform2f(uResolutionLoc, canvas.width, canvas.height);
+
             surfaces.forEach(s => {
+                gl.activeTexture(gl.TEXTURE0);
                 gl.bindTexture(gl.TEXTURE_2D, s.texture);
                 gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+
                 if (s.mediaType === 'video' && s.mediaElement.readyState >= 2) {
                     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, s.mediaElement);
                 } else if (s.mediaType === 'image' && s.mediaElement.complete) {
@@ -397,11 +397,20 @@
                 let flatTex = [];
 
                 if (s.type === 'Square') {
-                    flatPos = [s.vertices[0][0],s.vertices[0][1], s.vertices[1][0],s.vertices[1][1], s.vertices[2][0],s.vertices[2][1], s.vertices[3][0],s.vertices[3][1]];
+                    flatPos = [
+                        s.vertices[0][0], s.vertices[0][1],
+                        s.vertices[1][0], s.vertices[1][1],
+                        s.vertices[2][0], s.vertices[2][1],
+                        s.vertices[3][0], s.vertices[3][1]
+                    ];
                     flatTex = [0,0, 1,0, 0,1, 1,1];
                 } else if (s.type === 'Triangle') {
-                    flatPos = [s.vertices[0][0],s.vertices[0][1], s.vertices[1][0],s.vertices[1][1], s.vertices[2][0],s.vertices[2][1]];
-                    flatTex = [0.5,0, 0,1, 1,1];
+                    flatPos = [
+                        s.vertices[0][0], s.vertices[0][1],
+                        s.vertices[1][0], s.vertices[1][1],
+                        s.vertices[2][0], s.vertices[2][1]
+                    ];
+                    flatTex = [0.5, 0, 0, 1, 1, 1];
                 } else {
                     drawMode = gl.TRIANGLES;
                     const centerV = [
