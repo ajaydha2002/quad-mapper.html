@@ -128,21 +128,30 @@
         gl.linkProgram(program);
         gl.useProgram(program);
 
+        // Immediate procedural texture canvas setup
         const defaultTexCanvas = document.createElement('canvas');
         defaultTexCanvas.width = 512; defaultTexCanvas.height = 512;
         const dtCtx = defaultTexCanvas.getContext('2d');
 
         function updateDefaultTexture() {
-            dtCtx.fillStyle = '#111'; dtCtx.fillRect(0, 0, 512, 512);
-            dtCtx.strokeStyle = '#007acc'; dtCtx.lineWidth = 10;
-            dtCtx.strokeRect(15, 15, 482, 482);
-            dtCtx.fillStyle = '#fff';
-            dtCtx.font = 'bold 32px sans-serif';
+            dtCtx.fillStyle = '#1e1e1e'; 
+            dtCtx.fillRect(0, 0, 512, 512);
+            
+            dtCtx.strokeStyle = '#00ffff'; 
+            dtCtx.lineWidth = 14;
+            dtCtx.strokeRect(20, 20, 472, 472);
+
+            dtCtx.fillStyle = '#ff00ff';
+            dtCtx.font = 'bold 40px sans-serif';
             dtCtx.textAlign = 'center';
             dtCtx.fillText("मारवाड़ DJ", 256, 230);
-            dtCtx.fillStyle = `hsl(${Date.now() / 20 % 360}, 80%, 60%)`;
-            dtCtx.beginPath(); dtCtx.arc(256, 330, 45, 0, Math.PI * 2); dtCtx.fill();
+
+            dtCtx.fillStyle = `hsl(${Date.now() / 15 % 360}, 100%, 50%)`;
+            dtCtx.beginPath(); 
+            dtCtx.arc(256, 330, 45, 0, Math.PI * 2); 
+            dtCtx.fill();
         }
+        updateDefaultTexture(); // Render immediately on load
 
         let surfaces = [
             {
@@ -159,13 +168,14 @@
             }
         ];
         let activeSurfaceId = 1;
-        let interactionMode = null; // { type: 'vertex', sIdx, vIdx } or { type: 'shape', sIdx, startX, startY, origVertices }
+        let interactionMode = null;
 
         surfaces.forEach(s => {
             gl.bindTexture(gl.TEXTURE_2D, s.texture);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, s.mediaElement);
         });
 
         function updateUI() {
@@ -230,6 +240,7 @@
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, defaultTexCanvas);
 
             let vertices, texCoords, name;
             if (type === 'Square') {
@@ -283,7 +294,6 @@
             updateInspector();
         };
 
-        // Point-in-polygon helper for whole-shape dragging (relocation)
         function isPointInPolygon(pt, vs) {
             let x = pt[0], y = pt[1];
             let inside = false;
@@ -301,7 +311,6 @@
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
 
-            // 1. Check if clicking a specific vertex node first (for warping)
             let foundVertex = false;
             surfaces.forEach((s, sIdx) => {
                 s.vertices.forEach((v, vIdx) => {
@@ -315,7 +324,6 @@
             });
             if (foundVertex) return;
 
-            // 2. Check if clicking inside a shape to relocate the whole shape
             for (let sIdx = surfaces.length - 1; sIdx >= 0; sIdx--) {
                 const s = surfaces[sIdx];
                 if (isPointInPolygon([mouseX, mouseY], s.vertices)) {
@@ -352,7 +360,6 @@
 
         window.addEventListener('mouseup', () => { interactionMode = null; });
 
-        // Fullscreen Output Mode
         document.getElementById('toggleOutputBtn').onclick = () => {
             document.getElementById('output-overlay').style.display = 'block';
             document.getElementById('exit-output').style.display = 'block';
@@ -367,7 +374,7 @@
 
         function render() {
             updateDefaultTexture();
-            gl.clearColor(0.06, 0.06, 0.06, 1.0);
+            gl.clearColor(0.08, 0.08, 0.08, 1.0);
             gl.clear(gl.COLOR_BUFFER_BIT);
 
             surfaces.forEach(s => {
@@ -415,6 +422,7 @@
 
                 const texAttr = gl.getAttribLocation(program, "a_texCoord");
                 gl.enableVertexAttribArray(texAttr);
+                gl.bindBuffer(gl.ARRAY_BUFFER, texBuffer);
                 gl.vertexAttribPointer(texAttr, 2, gl.FLOAT, false, 0, 0);
 
                 gl.drawArrays(drawMode, 0, flatPos.length / 2);
