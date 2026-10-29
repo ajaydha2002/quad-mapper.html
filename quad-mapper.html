@@ -6,15 +6,16 @@
     <style>
         body { margin: 0; background: #111; color: #fff; font-family: sans-serif; overflow: hidden; }
         canvas { display: block; width: 100vw; height: 100vh; }
-        #ui { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.85); padding: 15px; border-radius: 8px; width: 230px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+        #ui { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.85); padding: 15px; border-radius: 8px; width: 250px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); z-index: 10; }
         h3 { margin-top: 0; font-size: 16px; color: #0ff; }
         button { background: #0ff; border: none; padding: 8px 12px; font-weight: bold; cursor: pointer; border-radius: 4px; width: 100%; margin-top: 8px; }
         button:hover { background: #0cc; }
         .btn-secondary { background: #444; color: #fff; }
         .btn-secondary:hover { background: #555; }
-        .surface-item { padding: 6px; margin-top: 5px; background: #222; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+        .surface-item { padding: 8px; margin-top: 5px; background: #222; border-radius: 4px; cursor: pointer; font-size: 13px; border-left: 4px solid #555; }
         .surface-item.active { background: #0f8080; border-left: 4px solid #0ff; }
-        #fileInput { display: none; }
+        .surface-info { font-size: 11px; color: #aaa; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        #fileInput, #mediaInput { display: none; }
     </style>
 </head>
 <body>
@@ -23,9 +24,11 @@
         <p style="font-size: 11px; color: #aaa;">Drag pins to warp surfaces.</p>
         <div id="surfaceList"></div>
         <button id="addSurfaceBtn">+ Add Surface Quad</button>
+        <button id="assignMediaBtn" class="btn-secondary">📁 Assign Media to Active</button>
         <hr style="border: 0; border-top: 1px solid #444; margin: 12px 0;">
         <button id="saveProjBtn" class="btn-secondary">💾 Save Project (JSON)</button>
         <button id="loadProjBtn" class="btn-secondary">📂 Load Project (JSON)</button>
+        <input type="file" id="mediaInput" accept="image/*,video/*">
         <input type="file" id="fileInput" accept=".json">
     </div>
     <canvas id="glCanvas"></canvas>
@@ -76,26 +79,44 @@
         gl.linkProgram(program);
         gl.useProgram(program);
 
-        // Multi-Surface State
+        // Fallback procedural canvas texture for default surfaces
+        const fallbackCanvas = document.createElement('canvas');
+        fallbackCanvas.width = 512; fallbackCanvas.height = 512;
+        const fCtx = fallbackCanvas.getContext('2d');
+
+        function updateFallbackTexture() {
+            fCtx.fillStyle = '#111'; fCtx.fillRect(0, 0, 512, 512);
+            fCtx.strokeStyle = '#0ff'; fCtx.lineWidth = 8;
+            fCtx.strokeRect(10, 10, 492, 492);
+            fCtx.fillStyle = '#f0f';
+            fCtx.font = '28px monospace';
+            fCtx.fillText("मारवाड़ DJ", 130, 250);
+            fCtx.fillStyle = `hsl(${Date.now() / 15 % 360}, 100%, 50%)`;
+            fCtx.beginPath(); fCtx.arc(256, 330, 35, 0, Math.PI * 2); fCtx.fill();
+        }
+
+        // Multi-Surface State (each surface holds its own media source element and GL texture)
         let surfaces = [
             {
                 id: 1,
                 name: "Surface 1 (मारवाड़ DJ)",
-                corners: [[100, 100], [400, 100], [100, 400], [400, 400]]
+                corners: [[100, 100], [400, 100], [100, 400], [400, 400]],
+                mediaName: "Procedural Default",
+                mediaType: "default",
+                mediaElement: fallbackCanvas,
+                texture: gl.createTexture()
             }
         ];
         let activeSurfaceId = 1;
         let selectedCorner = null;
 
-        const sourceCanvas = document.createElement('canvas');
-        sourceCanvas.width = 512; sourceCanvas.height = 512;
-        const sCtx = sourceCanvas.getContext('2d');
-
-        const texture = gl.createTexture();
-        gl.bindTexture(gl.TEXTURE_2D, texture);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        // Initialize textures
+        surfaces.forEach(s => {
+            gl.bindTexture(gl.TEXTURE_2D, s.texture);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        });
 
         function updateUI() {
             const listEl = document.getElementById('surfaceList');
@@ -103,7 +124,7 @@
             surfaces.forEach(s => {
                 const div = document.createElement('div');
                 div.className = `surface-item ${s.id === activeSurfaceId ? 'active' : ''}`;
-                div.innerHTML = `<span>${s.name}</span>`;
+                div.innerHTML = `<div><strong>${s.name}</strong></div><div class="surface-info">Media: ${s.mediaName}</div>`;
                 div.onclick = () => { activeSurfaceId = s.id; };
                 listEl.appendChild(div);
             });
@@ -112,22 +133,67 @@
         document.getElementById('addSurfaceBtn').onclick = () => {
             const newId = surfaces.length > 0 ? Math.max(...surfaces.map(s => s.id)) + 1 : 1;
             const offset = (surfaces.length * 30) % 300;
+            const newTex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, newTex);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+
             surfaces.push({
                 id: newId,
                 name: `Surface ${newId}`,
-                corners: [[150 + offset, 150 + offset], [450 + offset, 150 + offset], [150 + offset, 450 + offset], [450 + offset, 450 + offset]]
+                corners: [[150 + offset, 150 + offset], [450 + offset, 150 + offset], [150 + offset, 450 + offset], [450 + offset, 450 + offset]],
+                mediaName: "Procedural Default",
+                mediaType: "default",
+                mediaElement: fallbackCanvas,
+                texture: newTex
             });
             activeSurfaceId = newId;
             updateUI();
         };
 
+        // Media File Assignment Handler
+        document.getElementById('assignMediaBtn').onclick = () => {
+            document.getElementById('mediaInput').click();
+        };
+
+        document.getElementById('mediaInput').onchange = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const url = URL.createObjectURL(file);
+            const activeSurface = surfaces.find(s => s.id === activeSurfaceId);
+            if (!activeSurface) return;
+
+            activeSurface.mediaName = file.name;
+
+            if (file.type.startsWith('video/')) {
+                const video = document.createElement('video');
+                video.src = url;
+                video.loop = true;
+                video.muted = true;
+                video.autoplay = true;
+                video.play();
+                activeSurface.mediaType = 'video';
+                activeSurface.mediaElement = video;
+            } else if (file.type.startsWith('image/')) {
+                const img = new Image();
+                img.src = url;
+                activeSurface.mediaType = 'image';
+                activeSurface.mediaElement = img;
+            }
+            updateUI();
+        };
+
         // Project Save / Load Handlers
         document.getElementById('saveProjBtn').onclick = () => {
-            const projectData = {
-                version: "1.0",
-                app: "MadMapper Clone (मारवाड़ DJ)",
-                surfaces: surfaces
-            };
+            const exportSurfaces = surfaces.map(s => ({
+                id: s.id,
+                name: s.name,
+                corners: s.corners,
+                mediaName: s.mediaName,
+                mediaType: s.mediaType
+            }));
+            const projectData = { version: "1.1", app: "MadMapper Clone (मारवाड़ DJ)", surfaces: exportSurfaces };
             const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(projectData, null, 2));
             const downloadAnchor = document.createElement('a');
             downloadAnchor.setAttribute("href", dataStr);
@@ -149,10 +215,25 @@
                 try {
                     const parsed = JSON.parse(evt.target.result);
                     if (parsed.surfaces && Array.isArray(parsed.surfaces)) {
-                        surfaces = parsed.surfaces;
+                        surfaces = parsed.surfaces.map(s => {
+                            const newTex = gl.createTexture();
+                            gl.bindTexture(gl.TEXTURE_2D, newTex);
+                            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                            return {
+                                id: s.id,
+                                name: s.name,
+                                corners: s.corners,
+                                mediaName: s.mediaName || "Procedural Default",
+                                mediaType: s.mediaType || "default",
+                                mediaElement: fallbackCanvas,
+                                texture: newTex
+                            };
+                        });
                         if (surfaces.length > 0) activeSurfaceId = surfaces[0].id;
                         updateUI();
-                        alert("Project loaded successfully!");
+                        alert("Project layout loaded successfully!");
                     } else {
                         alert("Invalid project file format.");
                     }
@@ -194,26 +275,22 @@
             0.0, 1.0,  1.0, 1.0,
         ]), gl.STATIC_DRAW);
 
-        function updateSourceTexture() {
-            sCtx.fillStyle = '#111'; sCtx.fillRect(0, 0, 512, 512);
-            sCtx.strokeStyle = '#0ff'; sCtx.lineWidth = 8;
-            sCtx.strokeRect(10, 10, 492, 492);
-            sCtx.fillStyle = '#f0f';
-            sCtx.font = '28px monospace';
-            sCtx.fillText("मारवाड़ DJ", 130, 250);
-            sCtx.fillStyle = `hsl(${Date.now() / 15 % 360}, 100%, 50%)`;
-            sCtx.beginPath(); sCtx.arc(256, 330, 35, 0, Math.PI * 2); sCtx.fill();
-
-            gl.bindTexture(gl.TEXTURE_2D, texture);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sourceCanvas);
-        }
-
         function render() {
-            updateSourceTexture();
+            updateFallbackTexture();
             gl.clearColor(0.05, 0.05, 0.05, 1.0);
             gl.clear(gl.COLOR_BUFFER_BIT);
 
             surfaces.forEach(s => {
+                // Update texture from assigned media element (video, image, or procedural canvas)
+                gl.bindTexture(gl.TEXTURE_2D, s.texture);
+                if (s.mediaType === 'video' && s.mediaElement.readyState >= s.mediaElement.HAVE_CURRENT_DATA) {
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, s.mediaElement);
+                } else if (s.mediaType === 'image' && s.mediaElement.complete) {
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, s.mediaElement);
+                } else {
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, fallbackCanvas);
+                }
+
                 gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
                 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
                     s.corners[0][0], s.corners[0][1],
