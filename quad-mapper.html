@@ -6,20 +6,27 @@
     <style>
         body { margin: 0; background: #111; color: #fff; font-family: sans-serif; overflow: hidden; }
         canvas { display: block; width: 100vw; height: 100vh; }
-        #ui { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.85); padding: 15px; border-radius: 8px; width: 220px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+        #ui { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.85); padding: 15px; border-radius: 8px; width: 230px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
         h3 { margin-top: 0; font-size: 16px; color: #0ff; }
-        button { background: #0ff; border: none; padding: 8px 12px; font-weight: bold; cursor: pointer; border-radius: 4px; width: 100%; margin-top: 10px; }
+        button { background: #0ff; border: none; padding: 8px 12px; font-weight: bold; cursor: pointer; border-radius: 4px; width: 100%; margin-top: 8px; }
         button:hover { background: #0cc; }
+        .btn-secondary { background: #444; color: #fff; }
+        .btn-secondary:hover { background: #555; }
         .surface-item { padding: 6px; margin-top: 5px; background: #222; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
         .surface-item.active { background: #0f8080; border-left: 4px solid #0ff; }
+        #fileInput { display: none; }
     </style>
 </head>
 <body>
     <div id="ui">
         <h3>Surface Manager</h3>
-        <p style="font-size: 11px; color: #aaa;">Drag red pins to warp. Select surface below:</p>
+        <p style="font-size: 11px; color: #aaa;">Drag pins to warp surfaces.</p>
         <div id="surfaceList"></div>
         <button id="addSurfaceBtn">+ Add Surface Quad</button>
+        <hr style="border: 0; border-top: 1px solid #444; margin: 12px 0;">
+        <button id="saveProjBtn" class="btn-secondary">💾 Save Project (JSON)</button>
+        <button id="loadProjBtn" class="btn-secondary">📂 Load Project (JSON)</button>
+        <input type="file" id="fileInput" accept=".json">
     </div>
     <canvas id="glCanvas"></canvas>
 
@@ -78,9 +85,8 @@
             }
         ];
         let activeSurfaceId = 1;
-        let selectedCorner = null; // { surfaceIndex, cornerIndex }
+        let selectedCorner = null;
 
-        // Generate Texture Canvas for each surface (or shared source)
         const sourceCanvas = document.createElement('canvas');
         sourceCanvas.width = 512; sourceCanvas.height = 512;
         const sCtx = sourceCanvas.getContext('2d');
@@ -91,7 +97,6 @@
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
 
-        // UI Controller Rendering
         function updateUI() {
             const listEl = document.getElementById('surfaceList');
             listEl.innerHTML = '';
@@ -105,8 +110,8 @@
         }
 
         document.getElementById('addSurfaceBtn').onclick = () => {
-            const newId = surfaces.length + 1;
-            const offset = surfaces.length * 50;
+            const newId = surfaces.length > 0 ? Math.max(...surfaces.map(s => s.id)) + 1 : 1;
+            const offset = (surfaces.length * 30) % 300;
             surfaces.push({
                 id: newId,
                 name: `Surface ${newId}`,
@@ -116,9 +121,50 @@
             updateUI();
         };
 
-        // Mouse Interactivity for Corner Pins across all surfaces
+        // Project Save / Load Handlers
+        document.getElementById('saveProjBtn').onclick = () => {
+            const projectData = {
+                version: "1.0",
+                app: "MadMapper Clone (मारवाड़ DJ)",
+                surfaces: surfaces
+            };
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(projectData, null, 2));
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr);
+            downloadAnchor.setAttribute("download", "projection_project.json");
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+        };
+
+        document.getElementById('loadProjBtn').onclick = () => {
+            document.getElementById('fileInput').click();
+        };
+
+        document.getElementById('fileInput').onchange = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                try {
+                    const parsed = JSON.parse(evt.target.result);
+                    if (parsed.surfaces && Array.isArray(parsed.surfaces)) {
+                        surfaces = parsed.surfaces;
+                        if (surfaces.length > 0) activeSurfaceId = surfaces[0].id;
+                        updateUI();
+                        alert("Project loaded successfully!");
+                    } else {
+                        alert("Invalid project file format.");
+                    }
+                } catch (err) {
+                    alert("Error parsing JSON file: " + err.message);
+                }
+            };
+            reader.readAsText(file);
+        };
+
         window.addEventListener('mousedown', (e) => {
-            if (e.target.closest('#ui')) return; // Ignore clicks inside UI panel
+            if (e.target.closest('#ui')) return;
             surfaces.forEach((s, sIdx) => {
                 s.corners.forEach((c, cIdx) => {
                     const dist = Math.hypot(c[0] - e.clientX, c[1] - e.clientY);
@@ -162,7 +208,6 @@
             gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sourceCanvas);
         }
 
-        // Render Loop for all active surfaces
         function render() {
             updateSourceTexture();
             gl.clearColor(0.05, 0.05, 0.05, 1.0);
