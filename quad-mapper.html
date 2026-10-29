@@ -2,17 +2,24 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Open-Source Projection Mapper (MadMapper Clone)</title>
+    <title>Multi-Surface Projection Mapper (MadMapper Clone)</title>
     <style>
         body { margin: 0; background: #111; color: #fff; font-family: sans-serif; overflow: hidden; }
         canvas { display: block; width: 100vw; height: 100vh; }
-        #ui { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.8); padding: 10px; border-radius: 5px; pointer-events: none; }
+        #ui { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.85); padding: 15px; border-radius: 8px; width: 220px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+        h3 { margin-top: 0; font-size: 16px; color: #0ff; }
+        button { background: #0ff; border: none; padding: 8px 12px; font-weight: bold; cursor: pointer; border-radius: 4px; width: 100%; margin-top: 10px; }
+        button:hover { background: #0cc; }
+        .surface-item { padding: 6px; margin-top: 5px; background: #222; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+        .surface-item.active { background: #0f8080; border-left: 4px solid #0ff; }
     </style>
 </head>
 <body>
     <div id="ui">
-        <h3>Quad Surface Mapper</h3>
-        <p>Drag corner handles to warp projection surface.</p>
+        <h3>Surface Manager</h3>
+        <p style="font-size: 11px; color: #aaa;">Drag red pins to warp. Select surface below:</p>
+        <div id="surfaceList"></div>
+        <button id="addSurfaceBtn">+ Add Surface Quad</button>
     </div>
     <canvas id="glCanvas"></canvas>
 
@@ -62,24 +69,74 @@
         gl.linkProgram(program);
         gl.useProgram(program);
 
-        let corners = [
-            [100, 100], [400, 100],
-            [100, 400], [400, 400]
+        // Multi-Surface State
+        let surfaces = [
+            {
+                id: 1,
+                name: "Surface 1 (मारवाड़ DJ)",
+                corners: [[100, 100], [400, 100], [100, 400], [400, 400]]
+            }
         ];
+        let activeSurfaceId = 1;
+        let selectedCorner = null; // { surfaceIndex, cornerIndex }
 
-        let selectedCorner = null;
+        // Generate Texture Canvas for each surface (or shared source)
+        const sourceCanvas = document.createElement('canvas');
+        sourceCanvas.width = 512; sourceCanvas.height = 512;
+        const sCtx = sourceCanvas.getContext('2d');
 
-        window.addEventListener('mousedown', (e) => {
-            corners.forEach((c, i) => {
-                const dist = Math.hypot(c[0] - e.clientX, c[1] - e.clientY);
-                if (dist < 20) selectedCorner = i;
+        const texture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+
+        // UI Controller Rendering
+        function updateUI() {
+            const listEl = document.getElementById('surfaceList');
+            listEl.innerHTML = '';
+            surfaces.forEach(s => {
+                const div = document.createElement('div');
+                div.className = `surface-item ${s.id === activeSurfaceId ? 'active' : ''}`;
+                div.innerHTML = `<span>${s.name}</span>`;
+                div.onclick = () => { activeSurfaceId = s.id; };
+                listEl.appendChild(div);
             });
+        }
+
+        document.getElementById('addSurfaceBtn').onclick = () => {
+            const newId = surfaces.length + 1;
+            const offset = surfaces.length * 50;
+            surfaces.push({
+                id: newId,
+                name: `Surface ${newId}`,
+                corners: [[150 + offset, 150 + offset], [450 + offset, 150 + offset], [150 + offset, 450 + offset], [450 + offset, 450 + offset]]
+            });
+            activeSurfaceId = newId;
+            updateUI();
+        };
+
+        // Mouse Interactivity for Corner Pins across all surfaces
+        window.addEventListener('mousedown', (e) => {
+            if (e.target.closest('#ui')) return; // Ignore clicks inside UI panel
+            surfaces.forEach((s, sIdx) => {
+                s.corners.forEach((c, cIdx) => {
+                    const dist = Math.hypot(c[0] - e.clientX, c[1] - e.clientY);
+                    if (dist < 25) {
+                        activeSurfaceId = s.id;
+                        selectedCorner = { surfaceIndex: sIdx, cornerIndex: cIdx };
+                    }
+                });
+            });
+            updateUI();
         });
+
         window.addEventListener('mousemove', (e) => {
             if (selectedCorner !== null) {
-                corners[selectedCorner] = [e.clientX, e.clientY];
+                surfaces[selectedCorner.surfaceIndex].corners[selectedCorner.cornerIndex] = [e.clientX, e.clientY];
             }
         });
+
         window.addEventListener('mouseup', () => { selectedCorner = null; });
 
         const positionBuffer = gl.createBuffer();
@@ -91,56 +148,52 @@
             0.0, 1.0,  1.0, 1.0,
         ]), gl.STATIC_DRAW);
 
-        const sourceCanvas = document.createElement('canvas');
-        sourceCanvas.width = 512; sourceCanvas.height = 512;
-        const sCtx = sourceCanvas.getContext('2d');
-
-        const texture = gl.createTexture();
-        gl.bindTexture(gl.TEXTURE_2D, texture);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-
         function updateSourceTexture() {
-            sCtx.fillStyle = '#000'; sCtx.fillRect(0, 0, 512, 512);
-            sCtx.strokeStyle = '#0ff'; sCtx.lineWidth = 10;
+            sCtx.fillStyle = '#111'; sCtx.fillRect(0, 0, 512, 512);
+            sCtx.strokeStyle = '#0ff'; sCtx.lineWidth = 8;
             sCtx.strokeRect(10, 10, 492, 492);
             sCtx.fillStyle = '#f0f';
-            sCtx.font = '30px monospace';
-            sCtx.fillText("मारवाड़ DJ", 120, 250);
-            sCtx.fillStyle = `hsl(${Date.now() / 10 % 360}, 100%, 50%)`;
-            sCtx.beginPath(); sCtx.arc(256, 320, 40, 0, Math.PI * 2); sCtx.fill();
+            sCtx.font = '28px monospace';
+            sCtx.fillText("मारवाड़ DJ", 130, 250);
+            sCtx.fillStyle = `hsl(${Date.now() / 15 % 360}, 100%, 50%)`;
+            sCtx.beginPath(); sCtx.arc(256, 330, 35, 0, Math.PI * 2); sCtx.fill();
 
             gl.bindTexture(gl.TEXTURE_2D, texture);
             gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sourceCanvas);
         }
 
+        // Render Loop for all active surfaces
         function render() {
             updateSourceTexture();
             gl.clearColor(0.05, 0.05, 0.05, 1.0);
             gl.clear(gl.COLOR_BUFFER_BIT);
 
-            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-                corners[0][0], corners[0][1],
-                corners[1][0], corners[1][1],
-                corners[2][0], corners[2][1],
-                corners[3][0], corners[3][1],
-            ]), gl.STATIC_DRAW);
+            surfaces.forEach(s => {
+                gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+                    s.corners[0][0], s.corners[0][1],
+                    s.corners[1][0], s.corners[1][1],
+                    s.corners[2][0], s.corners[2][1],
+                    s.corners[3][0], s.corners[3][1],
+                ]), gl.STATIC_DRAW);
 
-            const posAttr = gl.getAttribLocation(program, "a_position");
-            gl.enableVertexAttribArray(posAttr);
-            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-            gl.vertexAttribPointer(posAttr, 2, gl.FLOAT, false, 0, 0);
+                const posAttr = gl.getAttribLocation(program, "a_position");
+                gl.enableVertexAttribArray(posAttr);
+                gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+                gl.vertexAttribPointer(posAttr, 2, gl.FLOAT, false, 0, 0);
 
-            const texAttr = gl.getAttribLocation(program, "a_texCoord");
-            gl.enableVertexAttribArray(texAttr);
-            gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
-            gl.vertexAttribPointer(texAttr, 2, gl.FLOAT, false, 0, 0);
+                const texAttr = gl.getAttribLocation(program, "a_texCoord");
+                gl.enableVertexAttribArray(texAttr);
+                gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+                gl.vertexAttribPointer(texAttr, 2, gl.FLOAT, false, 0, 0);
 
-            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+                gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+            });
+
             requestAnimationFrame(render);
         }
+
+        updateUI();
         render();
     </script>
 </body>
