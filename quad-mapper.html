@@ -9,7 +9,7 @@
         
         /* Top Menu Bar */
         #menubar { height: 35px; background: #222; border-bottom: 1px solid #333; display: flex; align-items: center; padding: 0 15px; justify-content: space-between; font-size: 13px; }
-        .menu-group { display: flex; gap: 15px; }
+        .menu-group { display: flex; gap: 15px; align-items: center; }
         .menu-item { cursor: pointer; color: #aaa; }
         .menu-item:hover { color: #fff; }
         .badge { background: #007acc; color: #fff; padding: 2px 6px; border-radius: 3px; font-size: 11px; font-weight: bold; }
@@ -33,7 +33,6 @@
         .control-group { margin-bottom: 15px; }
         .control-group label { display: block; font-size: 11px; color: #888; margin-bottom: 5px; text-transform: uppercase; }
         .control-group input, .control-group select { width: 100%; background: #2a2a2a; border: 1px solid #444; color: #fff; padding: 6px 8px; border-radius: 4px; font-size: 13px; }
-        .control-row { display: flex; gap: 8px; }
         
         /* Buttons */
         button { background: #333; border: 1px solid #444; color: #fff; padding: 7px 12px; font-size: 12px; font-weight: 600; cursor: pointer; border-radius: 4px; width: 100%; transition: background 0.2s; }
@@ -41,7 +40,7 @@
         button.primary { background: #007acc; border-color: #0062a3; }
         button.primary:hover { background: #0086e6; }
 
-        /* Output Mode Modal / Overlay */
+        /* Fullscreen Output Overlay */
         #output-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vw; background: #000; z-index: 9999; display: none; }
         #output-overlay canvas { width: 100% !important; height: 100% !important; }
         #exit-output { position: fixed; top: 20px; right: 20px; z-index: 10000; background: rgba(0,0,0,0.7); border: 1px solid #666; color: #fff; padding: 8px 16px; border-radius: 4px; cursor: pointer; display: none; }
@@ -54,8 +53,6 @@
         <div class="menu-group">
             <strong>MadMapper Web Pro</strong>
             <span class="badge">मारवाड़ DJ Edition</span>
-            <span class="menu-item" id="saveProj">Save Project</span>
-            <span class="menu-item" id="loadProj">Load Project</span>
         </div>
         <div class="menu-group">
             <button class="primary" id="toggleOutputBtn" style="width: auto; padding: 3px 12px;">🖥️ Fullscreen Output Mode</button>
@@ -64,11 +61,19 @@
 
     <!-- Main Workspace -->
     <div id="workspace">
-        <!-- Left: Surfaces -->
+        <!-- Left: Surfaces & Shapes -->
         <div id="sidebar-left">
             <div class="panel-header">
-                <span>Surfaces / Layers</span>
-                <button id="addQuadBtn" style="width: auto; padding: 2px 8px;">+ Quad</button>
+                <span>Add New Shape</span>
+            </div>
+            <div style="padding: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+                <button id="addSquareBtn">+ Square</button>
+                <button id="addTriangleBtn">+ Triangle</button>
+                <button id="addCircleBtn">+ Circle</button>
+                <button id="addRandomBtn">+ Random</button>
+            </div>
+            <div class="panel-header" style="border-top: 1px solid #333;">
+                <span>Active Surfaces</span>
             </div>
             <div class="surface-tree" id="surfaceList"></div>
         </div>
@@ -90,7 +95,6 @@
     <!-- Fullscreen Output Overlay -->
     <div id="output-overlay"></div>
     <button id="exit-output">Exit Fullscreen Output</button>
-    <input type="file" id="fileInput" accept=".json" style="display:none">
     <input type="file" id="mediaInput" accept="image/*,video/*" style="display:none">
 
     <script>
@@ -98,7 +102,6 @@
         const gl = canvas.getContext('webgl');
         if (!gl) alert('WebGL not supported!');
 
-        // Shader setup
         const vsSource = `
             attribute vec2 a_position;
             attribute vec2 a_texCoord;
@@ -131,7 +134,6 @@
         gl.linkProgram(program);
         gl.useProgram(program);
 
-        // Fallback texture canvas (मारवाड़ DJ branding)
         const defaultTexCanvas = document.createElement('canvas');
         defaultTexCanvas.width = 512; defaultTexCanvas.height = 512;
         const dtCtx = defaultTexCanvas.getContext('2d');
@@ -148,12 +150,14 @@
             dtCtx.beginPath(); dtCtx.arc(256, 330, 45, 0, Math.PI * 2); dtCtx.fill();
         }
 
-        // Project State
+        // Project State: Supports flexible vertex arrays per shape
         let surfaces = [
             {
                 id: 1,
-                name: "Main Projection Quad",
-                corners: [[100, 100], [500, 100], [100, 500], [500, 500]],
+                name: "Square Surface",
+                type: "Square",
+                vertices: [[100, 100], [400, 100], [100, 400], [400, 400]], // Quad triangle strip layout
+                texCoords: [[0,0], [1,0], [0,1], [1,1]],
                 opacity: 1.0,
                 mediaName: "Default Procedural",
                 mediaType: "default",
@@ -162,7 +166,7 @@
             }
         ];
         let activeSurfaceId = 1;
-        let selectedCorner = null;
+        let selectedVertex = null; // { sIdx, vIdx }
 
         surfaces.forEach(s => {
             gl.bindTexture(gl.TEXTURE_2D, s.texture);
@@ -171,14 +175,13 @@
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
         });
 
-        // UI Binding & Rendering
         function updateUI() {
             const listEl = document.getElementById('surfaceList');
             listEl.innerHTML = '';
             surfaces.forEach(s => {
                 const div = document.createElement('div');
                 div.className = `tree-item ${s.id === activeSurfaceId ? 'active' : ''}`;
-                div.innerHTML = `<span>${s.name}</span><span style="font-size:10px; color:#888;">Quad</span>`;
+                div.innerHTML = `<span>${s.name}</span><span style="font-size:10px; color:#888;">${s.type}</span>`;
                 div.onclick = () => { activeSurfaceId = s.id; updateUI(); };
                 listEl.appendChild(div);
             });
@@ -193,56 +196,74 @@
                 return;
             }
 
+            let coordsHtml = '';
+            s.vertices.forEach((v, idx) => {
+                coordsHtml += `Vertex ${idx + 1}: ${Math.round(v[0])}, ${Math.round(v[1])}<br>`;
+            });
+
             insp.innerHTML = `
                 <div class="control-group">
                     <label>Surface Name</label>
                     <input type="text" id="surfNameInput" value="${s.name}">
                 </div>
                 <div class="control-group">
+                    <label>Shape Type: <strong>${s.type}</strong></label>
+                </div>
+                <div class="control-group">
                     <label>Assigned Media Source</label>
                     <div style="font-size: 12px; color: #007acc; margin-bottom: 5px; overflow: hidden; text-overflow: ellipsis;">${s.mediaName}</div>
-                    <button id="changeMediaBtn">📁 Choose Image / Video File</button>
+                    <button id="changeMediaBtn">📁 Choose Media File</button>
                 </div>
                 <div class="control-group">
                     <label>Opacity (${Math.round(s.opacity * 100)}%)</label>
                     <input type="range" id="opacityInput" min="0" max="1" step="0.05" value="${s.opacity}">
                 </div>
                 <div class="control-group">
-                    <label>Corner Coordinates (TL, TR, BL, BR)</label>
-                    <div style="font-size: 11px; color: #aaa; font-family: monospace;">
-                        TL: ${Math.round(s.corners[0][0])}, ${Math.round(s.corners[0][1])}<br>
-                        TR: ${Math.round(s.corners[1][0])}, ${Math.round(s.corners[1][1])}<br>
-                        BL: ${Math.round(s.corners[2][0])}, ${Math.round(s.corners[2][1])}<br>
-                        BR: ${Math.round(s.corners[3][0])}, ${Math.round(s.corners[3][1])}
-                    </div>
+                    <label>Vertex Coordinates (Drag nodes on canvas)</label>
+                    <div style="font-size: 11px; color: #aaa; font-family: monospace;">${coordsHtml}</div>
                 </div>
             `;
 
-            document.getElementById('surfNameInput').oninput = (e) => {
-                s.name = e.target.value;
-                updateUI();
-            };
-            document.getElementById('opacityInput').oninput = (e) => {
-                s.opacity = parseFloat(e.target.value);
-            };
-            document.getElementById('changeMediaBtn').onclick = () => {
-                document.getElementById('mediaInput').click();
-            };
+            document.getElementById('surfNameInput').oninput = (e) => { s.name = e.target.value; updateUI(); };
+            document.getElementById('opacityInput').oninput = (e) => { s.opacity = parseFloat(e.target.value); };
+            document.getElementById('changeMediaBtn').onclick = () => { document.getElementById('mediaInput').click(); };
         }
 
-        document.getElementById('addQuadBtn').onclick = () => {
+        // Shape Generators
+        function addShape(type) {
             const newId = surfaces.length > 0 ? Math.max(...surfaces.map(item => item.id)) + 1 : 1;
-            const offset = (surfaces.length * 40) % 300;
             const newTex = gl.createTexture();
             gl.bindTexture(gl.TEXTURE_2D, newTex);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
 
+            let vertices, texCoords, name;
+            if (type === 'Square') {
+                name = `Square ${newId}`;
+                vertices = [[150, 150], [450, 150], [150, 450], [450, 450]];
+                texCoords = [[0,0], [1,0], [0,1], [1,1]];
+            } else if (type === 'Triangle') {
+                name = `Triangle ${newId}`;
+                vertices = [[300, 150], [150, 450], [450, 450]];
+                texCoords = [[0.5, 0], [0, 1], [1, 1]];
+            } else if (type === 'Circle') {
+                name = `Circle / Disc ${newId}`;
+                // Approximate circle disc with triangle fan or polygon vertices
+                vertices = [[300, 300], [300, 180], [380, 220], [420, 300], [380, 380], [300, 420], [220, 380], [180, 300], [220, 220]];
+                texCoords = vertices.map(v => [(v[0]-180)/240, (v[1]-180)/240]);
+            } else if (type === 'Random') {
+                name = `Random Polygon ${newId}`;
+                vertices = [[200, 200], [420, 160], [500, 380], [350, 480], [160, 400]];
+                texCoords = vertices.map(v => [(v[0]-160)/340, (v[1]-160)/320]);
+            }
+
             surfaces.push({
                 id: newId,
-                name: `Surface ${newId}`,
-                corners: [[150 + offset, 150 + offset], [450 + offset, 150 + offset], [150 + offset, 450 + offset], [450 + offset, 450 + offset]],
+                name,
+                type,
+                vertices,
+                texCoords,
                 opacity: 1.0,
                 mediaName: "Default Procedural",
                 mediaType: "default",
@@ -251,7 +272,12 @@
             });
             activeSurfaceId = newId;
             updateUI();
-        };
+        }
+
+        document.getElementById('addSquareBtn').onclick = () => addShape('Square');
+        document.getElementById('addTriangleBtn').onclick = () => addShape('Triangle');
+        document.getElementById('addCircleBtn').onclick = () => addShape('Circle');
+        document.getElementById('addRandomBtn').onclick = () => addShape('Random');
 
         document.getElementById('mediaInput').onchange = (e) => {
             const file = e.target.files[0];
@@ -273,17 +299,17 @@
             updateInspector();
         };
 
-        // Mouse corner pin dragging on viewport canvas
+        // Mouse Node Dragging for Freeform Reshaping
         canvas.addEventListener('mousedown', (e) => {
             const rect = canvas.getBoundingClientRect();
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
 
             surfaces.forEach((s, sIdx) => {
-                s.corners.forEach((c, cIdx) => {
-                    if (Math.hypot(c[0] - mouseX, c[1] - mouseY) < 20) {
+                s.vertices.forEach((v, vIdx) => {
+                    if (Math.hypot(v[0] - mouseX, v[1] - mouseY) < 22) {
                         activeSurfaceId = s.id;
-                        selectedCorner = { sIdx, cIdx };
+                        selectedVertex = { sIdx, vIdx };
                         updateUI();
                     }
                 });
@@ -291,33 +317,28 @@
         });
 
         window.addEventListener('mousemove', (e) => {
-            if (!selectedCorner) return;
+            if (!selectedVertex) return;
             const rect = canvas.getBoundingClientRect();
             const mouseX = Math.max(0, Math.min(canvas.width, e.clientX - rect.left));
             const mouseY = Math.max(0, Math.min(canvas.height, e.clientY - rect.top));
-            surfaces[selectedCorner.sIdx].corners[selectedCorner.cIdx] = [mouseX, mouseY];
+            surfaces[selectedVertex.sIdx].vertices[selectedVertex.vIdx] = [mouseX, mouseY];
+            updateInspector();
         });
 
-        window.addEventListener('mouseup', () => { selectedCorner = null; });
+        window.addEventListener('mouseup', () => { selectedVertex = null; });
 
-        // Fullscreen Output Mode Toggle
+        // Fullscreen Output Mode
         document.getElementById('toggleOutputBtn').onclick = () => {
-            const overlay = document.getElementById('output-overlay');
-            const exitBtn = document.getElementById('exit-output');
-            overlay.style.display = 'block';
-            exitBtn.style.display = 'block';
+            document.getElementById('output-overlay').style.display = 'block';
+            document.getElementById('exit-output').style.display = 'block';
         };
-
         document.getElementById('exit-output').onclick = () => {
             document.getElementById('output-overlay').style.display = 'none';
             document.getElementById('exit-output').style.display = 'none';
         };
 
-        // Buffers
         const posBuffer = gl.createBuffer();
         const texBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, texBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0,0, 1,0, 0,1, 1,1]), gl.STATIC_DRAW);
 
         function render() {
             updateDefaultTexture();
@@ -334,26 +355,51 @@
                     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, defaultTexCanvas);
                 }
 
+                // Convert vertices & texcoords into flat triangulation buffers
+                // Supports Quads (Triangle Strip) and Polygons/Circles/Triangles via Triangle Fan decomposition around center
+                let drawMode = gl.TRIANGLE_STRIP;
+                let flatPos = [];
+                let flatTex = [];
+
+                if (s.type === 'Square') {
+                    flatPos = [s.vertices[0][0],s.vertices[0][1], s.vertices[1][0],s.vertices[1][1], s.vertices[2][0],s.vertices[2][1], s.vertices[3][0],s.vertices[3][1]];
+                    flatTex = [0,0, 1,0, 0,1, 1,1];
+                } else if (s.type === 'Triangle') {
+                    flatPos = [s.vertices[0][0],s.vertices[0][1], s.vertices[1][0],s.vertices[1][1], s.vertices[2][0],s.vertices[2][1]];
+                    flatTex = [0.5,0, 0,1, 1,1];
+                } else {
+                    // Triangle Fan for Circles and Random Polygons
+                    drawMode = gl.TRIANGLES;
+                    const centerV = [
+                        s.vertices.reduce((sum, v) => sum + v[0], 0) / s.vertices.length,
+                        s.vertices.reduce((sum, v) => sum + v[1], 0) / s.vertices.length
+                    ];
+                    for (let i = 0; i < s.vertices.length; i++) {
+                        let nextI = (i + 1) % s.vertices.length;
+                        flatPos.push(centerV[0], centerV[1], s.vertices[i][0], s.vertices[i][1], s.vertices[nextI][0], s.vertices[nextI][1]);
+                        flatTex.push(0.5, 0.5, s.texCoords[i][0], s.texCoords[i][1], s.texCoords[nextI][0], s.texCoords[nextI][1]);
+                    }
+                }
+
                 gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
-                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-                    s.corners[0][0], s.corners[0][1],
-                    s.corners[1][0], s.corners[1][1],
-                    s.corners[2][0], s.corners[2][1],
-                    s.corners[3][0], s.corners[3][1],
-                ]), gl.STATIC_DRAW);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(flatPos), gl.STATIC_DRAW);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, texBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(flatTex), gl.STATIC_DRAW);
 
                 const posAttr = gl.getAttribLocation(program, "a_position");
                 gl.enableVertexAttribArray(posAttr);
+                gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
                 gl.vertexAttribPointer(posAttr, 2, gl.FLOAT, false, 0, 0);
 
                 const texAttr = gl.getAttribLocation(program, "a_texCoord");
                 gl.enableVertexAttribArray(texAttr);
+                gl.bindBuffer(gl.ARRAY_BUFFER, texBuffer);
                 gl.vertexAttribPointer(texAttr, 2, gl.FLOAT, false, 0, 0);
 
-                gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+                gl.drawArrays(drawMode, 0, flatPos.length / 2);
             });
 
-            // Draw corner handles on preview canvas for active surface
             requestAnimationFrame(render);
         }
 
