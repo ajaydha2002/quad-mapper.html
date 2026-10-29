@@ -2,61 +2,113 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Multi-Surface Projection Mapper (MadMapper Clone)</title>
+    <title>MadMapper Web Pro (Open-Source Clone)</title>
     <style>
-        body { margin: 0; background: #111; color: #fff; font-family: sans-serif; overflow: hidden; }
-        canvas { display: block; width: 100vw; height: 100vh; }
-        #ui { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.85); padding: 15px; border-radius: 8px; width: 250px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); z-index: 10; }
-        h3 { margin-top: 0; font-size: 16px; color: #0ff; }
-        button { background: #0ff; border: none; padding: 8px 12px; font-weight: bold; cursor: pointer; border-radius: 4px; width: 100%; margin-top: 8px; }
-        button:hover { background: #0cc; }
-        .btn-secondary { background: #444; color: #fff; }
-        .btn-secondary:hover { background: #555; }
-        .surface-item { padding: 8px; margin-top: 5px; background: #222; border-radius: 4px; cursor: pointer; font-size: 13px; border-left: 4px solid #555; }
-        .surface-item.active { background: #0f8080; border-left: 4px solid #0ff; }
-        .surface-info { font-size: 11px; color: #aaa; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        #fileInput, #mediaInput { display: none; }
+        * { box-sizing: border-box; }
+        body { margin: 0; background: #181818; color: #ddd; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        
+        /* Top Menu Bar */
+        #menubar { height: 35px; background: #222; border-bottom: 1px solid #333; display: flex; align-items: center; padding: 0 15px; justify-content: space-between; font-size: 13px; }
+        .menu-group { display: flex; gap: 15px; }
+        .menu-item { cursor: pointer; color: #aaa; }
+        .menu-item:hover { color: #fff; }
+        .badge { background: #007acc; color: #fff; padding: 2px 6px; border-radius: 3px; font-size: 11px; font-weight: bold; }
+
+        /* Main Workspace Layout */
+        #workspace { display: flex; flex: 1; overflow: hidden; }
+        
+        /* Left Sidebar: Surface Tree */
+        #sidebar-left { width: 260px; background: #202020; border-right: 1px solid #333; display: flex; flex-direction: column; }
+        .panel-header { padding: 10px 12px; background: #282828; font-size: 12px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
+        .surface-tree { flex: 1; overflow-y: auto; padding: 8px; }
+        .tree-item { padding: 8px 10px; margin-bottom: 4px; background: #2a2a2a; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-size: 13px; border-left: 3px solid #555; }
+        .tree-item.active { background: #333; border-left-color: #007acc; color: #fff; }
+        
+        /* Center Canvas Workspace */
+        #viewport-container { flex: 1; position: relative; background: #121212; display: flex; justify-content: center; align-items: center; overflow: hidden; }
+        canvas { display: block; background: #0a0a0a; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
+
+        /* Right Sidebar: Property Inspector */
+        #sidebar-right { width: 300px; background: #202020; border-left: 1px solid #333; display: flex; flex-direction: column; padding: 12px; overflow-y: auto; }
+        .control-group { margin-bottom: 15px; }
+        .control-group label { display: block; font-size: 11px; color: #888; margin-bottom: 5px; text-transform: uppercase; }
+        .control-group input, .control-group select { width: 100%; background: #2a2a2a; border: 1px solid #444; color: #fff; padding: 6px 8px; border-radius: 4px; font-size: 13px; }
+        .control-row { display: flex; gap: 8px; }
+        
+        /* Buttons */
+        button { background: #333; border: 1px solid #444; color: #fff; padding: 7px 12px; font-size: 12px; font-weight: 600; cursor: pointer; border-radius: 4px; width: 100%; transition: background 0.2s; }
+        button:hover { background: #444; }
+        button.primary { background: #007acc; border-color: #0062a3; }
+        button.primary:hover { background: #0086e6; }
+
+        /* Output Mode Modal / Overlay */
+        #output-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vw; background: #000; z-index: 9999; display: none; }
+        #output-overlay canvas { width: 100% !important; height: 100% !important; }
+        #exit-output { position: fixed; top: 20px; right: 20px; z-index: 10000; background: rgba(0,0,0,0.7); border: 1px solid #666; color: #fff; padding: 8px 16px; border-radius: 4px; cursor: pointer; display: none; }
     </style>
 </head>
 <body>
-    <div id="ui">
-        <h3>Surface Manager</h3>
-        <p style="font-size: 11px; color: #aaa;">Drag pins to warp surfaces.</p>
-        <div id="surfaceList"></div>
-        <button id="addSurfaceBtn">+ Add Surface Quad</button>
-        <button id="assignMediaBtn" class="btn-secondary">📁 Assign Media to Active</button>
-        <hr style="border: 0; border-top: 1px solid #444; margin: 12px 0;">
-        <button id="saveProjBtn" class="btn-secondary">💾 Save Project (JSON)</button>
-        <button id="loadProjBtn" class="btn-secondary">📂 Load Project (JSON)</button>
-        <input type="file" id="mediaInput" accept="image/*,video/*">
-        <input type="file" id="fileInput" accept=".json">
+
+    <!-- Top Menu Bar -->
+    <div id="menubar">
+        <div class="menu-group">
+            <strong>MadMapper Web Pro</strong>
+            <span class="badge">मारवाड़ DJ Edition</span>
+            <span class="menu-item" id="saveProj">Save Project</span>
+            <span class="menu-item" id="loadProj">Load Project</span>
+        </div>
+        <div class="menu-group">
+            <button class="primary" id="toggleOutputBtn" style="width: auto; padding: 3px 12px;">🖥️ Fullscreen Output Mode</button>
+        </div>
     </div>
-    <canvas id="glCanvas"></canvas>
+
+    <!-- Main Workspace -->
+    <div id="workspace">
+        <!-- Left: Surfaces -->
+        <div id="sidebar-left">
+            <div class="panel-header">
+                <span>Surfaces / Layers</span>
+                <button id="addQuadBtn" style="width: auto; padding: 2px 8px;">+ Quad</button>
+            </div>
+            <div class="surface-tree" id="surfaceList"></div>
+        </div>
+
+        <!-- Center: Interactive Viewport -->
+        <div id="viewport-container">
+            <canvas id="glCanvas" width="1024" height="768"></canvas>
+        </div>
+
+        <!-- Right: Property Inspector -->
+        <div id="sidebar-right">
+            <div class="panel-header" style="margin-bottom: 12px;">Inspector</div>
+            <div id="inspectorContent">
+                <p style="color: #777; font-size: 12px;">Select a surface to edit properties.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Fullscreen Output Overlay -->
+    <div id="output-overlay"></div>
+    <button id="exit-output">Exit Fullscreen Output</button>
+    <input type="file" id="fileInput" accept=".json" style="display:none">
+    <input type="file" id="mediaInput" accept="image/*,video/*" style="display:none">
 
     <script>
         const canvas = document.getElementById('glCanvas');
         const gl = canvas.getContext('webgl');
         if (!gl) alert('WebGL not supported!');
 
-        function resize() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-            gl.viewport(0, 0, canvas.width, canvas.height);
-        }
-        window.addEventListener('resize', resize);
-        resize();
-
+        // Shader setup
         const vsSource = `
             attribute vec2 a_position;
             attribute vec2 a_texCoord;
             varying vec2 v_texCoord;
             void main() {
-                vec2 clipSpace = (a_position / vec2(${canvas.width}, ${canvas.height})) * 2.0 - 1.0;
+                vec2 clipSpace = (a_position / vec2(1024.0, 768.0)) * 2.0 - 1.0;
                 gl_Position = vec4(clipSpace * vec2(1, -1), 0.0, 1.0);
                 v_texCoord = a_texCoord;
             }
         `;
-
         const fsSource = `
             precision mediump float;
             uniform sampler2D u_image;
@@ -67,10 +119,10 @@
         `;
 
         function createShader(gl, type, source) {
-            const shader = gl.createShader(type);
-            gl.shaderSource(shader, source);
-            gl.compileShader(shader);
-            return shader;
+            const s = gl.createShader(type);
+            gl.shaderSource(s, source);
+            gl.compileShader(s);
+            return s;
         }
 
         const program = gl.createProgram();
@@ -79,38 +131,39 @@
         gl.linkProgram(program);
         gl.useProgram(program);
 
-        // Fallback procedural canvas texture for default surfaces
-        const fallbackCanvas = document.createElement('canvas');
-        fallbackCanvas.width = 512; fallbackCanvas.height = 512;
-        const fCtx = fallbackCanvas.getContext('2d');
+        // Fallback texture canvas (मारवाड़ DJ branding)
+        const defaultTexCanvas = document.createElement('canvas');
+        defaultTexCanvas.width = 512; defaultTexCanvas.height = 512;
+        const dtCtx = defaultTexCanvas.getContext('2d');
 
-        function updateFallbackTexture() {
-            fCtx.fillStyle = '#111'; fCtx.fillRect(0, 0, 512, 512);
-            fCtx.strokeStyle = '#0ff'; fCtx.lineWidth = 8;
-            fCtx.strokeRect(10, 10, 492, 492);
-            fCtx.fillStyle = '#f0f';
-            fCtx.font = '28px monospace';
-            fCtx.fillText("मारवाड़ DJ", 130, 250);
-            fCtx.fillStyle = `hsl(${Date.now() / 15 % 360}, 100%, 50%)`;
-            fCtx.beginPath(); fCtx.arc(256, 330, 35, 0, Math.PI * 2); fCtx.fill();
+        function updateDefaultTexture() {
+            dtCtx.fillStyle = '#111'; dtCtx.fillRect(0, 0, 512, 512);
+            dtCtx.strokeStyle = '#007acc'; dtCtx.lineWidth = 10;
+            dtCtx.strokeRect(15, 15, 482, 482);
+            dtCtx.fillStyle = '#fff';
+            dtCtx.font = 'bold 32px sans-serif';
+            dtCtx.textAlign = 'center';
+            dtCtx.fillText("मारवाड़ DJ", 256, 230);
+            dtCtx.fillStyle = `hsl(${Date.now() / 20 % 360}, 80%, 60%)`;
+            dtCtx.beginPath(); dtCtx.arc(256, 330, 45, 0, Math.PI * 2); dtCtx.fill();
         }
 
-        // Multi-Surface State (each surface holds its own media source element and GL texture)
+        // Project State
         let surfaces = [
             {
                 id: 1,
-                name: "Surface 1 (मारवाड़ DJ)",
-                corners: [[100, 100], [400, 100], [100, 400], [400, 400]],
-                mediaName: "Procedural Default",
+                name: "Main Projection Quad",
+                corners: [[100, 100], [500, 100], [100, 500], [500, 500]],
+                opacity: 1.0,
+                mediaName: "Default Procedural",
                 mediaType: "default",
-                mediaElement: fallbackCanvas,
+                mediaElement: defaultTexCanvas,
                 texture: gl.createTexture()
             }
         ];
         let activeSurfaceId = 1;
         let selectedCorner = null;
 
-        // Initialize textures
         surfaces.forEach(s => {
             gl.bindTexture(gl.TEXTURE_2D, s.texture);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -118,21 +171,68 @@
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
         });
 
+        // UI Binding & Rendering
         function updateUI() {
             const listEl = document.getElementById('surfaceList');
             listEl.innerHTML = '';
             surfaces.forEach(s => {
                 const div = document.createElement('div');
-                div.className = `surface-item ${s.id === activeSurfaceId ? 'active' : ''}`;
-                div.innerHTML = `<div><strong>${s.name}</strong></div><div class="surface-info">Media: ${s.mediaName}</div>`;
-                div.onclick = () => { activeSurfaceId = s.id; };
+                div.className = `tree-item ${s.id === activeSurfaceId ? 'active' : ''}`;
+                div.innerHTML = `<span>${s.name}</span><span style="font-size:10px; color:#888;">Quad</span>`;
+                div.onclick = () => { activeSurfaceId = s.id; updateUI(); };
                 listEl.appendChild(div);
             });
+            updateInspector();
         }
 
-        document.getElementById('addSurfaceBtn').onclick = () => {
-            const newId = surfaces.length > 0 ? Math.max(...surfaces.map(s => s.id)) + 1 : 1;
-            const offset = (surfaces.length * 30) % 300;
+        function updateInspector() {
+            const insp = document.getElementById('inspectorContent');
+            const s = surfaces.find(item => item.id === activeSurfaceId);
+            if (!s) {
+                insp.innerHTML = '<p style="color: #777; font-size: 12px;">No surface selected.</p>';
+                return;
+            }
+
+            insp.innerHTML = `
+                <div class="control-group">
+                    <label>Surface Name</label>
+                    <input type="text" id="surfNameInput" value="${s.name}">
+                </div>
+                <div class="control-group">
+                    <label>Assigned Media Source</label>
+                    <div style="font-size: 12px; color: #007acc; margin-bottom: 5px; overflow: hidden; text-overflow: ellipsis;">${s.mediaName}</div>
+                    <button id="changeMediaBtn">📁 Choose Image / Video File</button>
+                </div>
+                <div class="control-group">
+                    <label>Opacity (${Math.round(s.opacity * 100)}%)</label>
+                    <input type="range" id="opacityInput" min="0" max="1" step="0.05" value="${s.opacity}">
+                </div>
+                <div class="control-group">
+                    <label>Corner Coordinates (TL, TR, BL, BR)</label>
+                    <div style="font-size: 11px; color: #aaa; font-family: monospace;">
+                        TL: ${Math.round(s.corners[0][0])}, ${Math.round(s.corners[0][1])}<br>
+                        TR: ${Math.round(s.corners[1][0])}, ${Math.round(s.corners[1][1])}<br>
+                        BL: ${Math.round(s.corners[2][0])}, ${Math.round(s.corners[2][1])}<br>
+                        BR: ${Math.round(s.corners[3][0])}, ${Math.round(s.corners[3][1])}
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('surfNameInput').oninput = (e) => {
+                s.name = e.target.value;
+                updateUI();
+            };
+            document.getElementById('opacityInput').oninput = (e) => {
+                s.opacity = parseFloat(e.target.value);
+            };
+            document.getElementById('changeMediaBtn').onclick = () => {
+                document.getElementById('mediaInput').click();
+            };
+        }
+
+        document.getElementById('addQuadBtn').onclick = () => {
+            const newId = surfaces.length > 0 ? Math.max(...surfaces.map(item => item.id)) + 1 : 1;
+            const offset = (surfaces.length * 40) % 300;
             const newTex = gl.createTexture();
             gl.bindTexture(gl.TEXTURE_2D, newTex);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -143,155 +243,98 @@
                 id: newId,
                 name: `Surface ${newId}`,
                 corners: [[150 + offset, 150 + offset], [450 + offset, 150 + offset], [150 + offset, 450 + offset], [450 + offset, 450 + offset]],
-                mediaName: "Procedural Default",
+                opacity: 1.0,
+                mediaName: "Default Procedural",
                 mediaType: "default",
-                mediaElement: fallbackCanvas,
+                mediaElement: defaultTexCanvas,
                 texture: newTex
             });
             activeSurfaceId = newId;
             updateUI();
         };
 
-        // Media File Assignment Handler
-        document.getElementById('assignMediaBtn').onclick = () => {
-            document.getElementById('mediaInput').click();
-        };
-
         document.getElementById('mediaInput').onchange = (e) => {
             const file = e.target.files[0];
             if (!file) return;
             const url = URL.createObjectURL(file);
-            const activeSurface = surfaces.find(s => s.id === activeSurfaceId);
-            if (!activeSurface) return;
+            const s = surfaces.find(item => item.id === activeSurfaceId);
+            if (!s) return;
 
-            activeSurface.mediaName = file.name;
-
+            s.mediaName = file.name;
             if (file.type.startsWith('video/')) {
-                const video = document.createElement('video');
-                video.src = url;
-                video.loop = true;
-                video.muted = true;
-                video.autoplay = true;
-                video.play();
-                activeSurface.mediaType = 'video';
-                activeSurface.mediaElement = video;
+                const vid = document.createElement('video');
+                vid.src = url; vid.loop = true; vid.muted = true; vid.autoplay = true; vid.play();
+                s.mediaType = 'video'; s.mediaElement = vid;
             } else if (file.type.startsWith('image/')) {
                 const img = new Image();
                 img.src = url;
-                activeSurface.mediaType = 'image';
-                activeSurface.mediaElement = img;
+                s.mediaType = 'image'; s.mediaElement = img;
             }
-            updateUI();
+            updateInspector();
         };
 
-        // Project Save / Load Handlers
-        document.getElementById('saveProjBtn').onclick = () => {
-            const exportSurfaces = surfaces.map(s => ({
-                id: s.id,
-                name: s.name,
-                corners: s.corners,
-                mediaName: s.mediaName,
-                mediaType: s.mediaType
-            }));
-            const projectData = { version: "1.1", app: "MadMapper Clone (मारवाड़ DJ)", surfaces: exportSurfaces };
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(projectData, null, 2));
-            const downloadAnchor = document.createElement('a');
-            downloadAnchor.setAttribute("href", dataStr);
-            downloadAnchor.setAttribute("download", "projection_project.json");
-            document.body.appendChild(downloadAnchor);
-            downloadAnchor.click();
-            downloadAnchor.remove();
-        };
+        // Mouse corner pin dragging on viewport canvas
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
 
-        document.getElementById('loadProjBtn').onclick = () => {
-            document.getElementById('fileInput').click();
-        };
-
-        document.getElementById('fileInput').onchange = (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = function(evt) {
-                try {
-                    const parsed = JSON.parse(evt.target.result);
-                    if (parsed.surfaces && Array.isArray(parsed.surfaces)) {
-                        surfaces = parsed.surfaces.map(s => {
-                            const newTex = gl.createTexture();
-                            gl.bindTexture(gl.TEXTURE_2D, newTex);
-                            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-                            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-                            return {
-                                id: s.id,
-                                name: s.name,
-                                corners: s.corners,
-                                mediaName: s.mediaName || "Procedural Default",
-                                mediaType: s.mediaType || "default",
-                                mediaElement: fallbackCanvas,
-                                texture: newTex
-                            };
-                        });
-                        if (surfaces.length > 0) activeSurfaceId = surfaces[0].id;
-                        updateUI();
-                        alert("Project layout loaded successfully!");
-                    } else {
-                        alert("Invalid project file format.");
-                    }
-                } catch (err) {
-                    alert("Error parsing JSON file: " + err.message);
-                }
-            };
-            reader.readAsText(file);
-        };
-
-        window.addEventListener('mousedown', (e) => {
-            if (e.target.closest('#ui')) return;
             surfaces.forEach((s, sIdx) => {
                 s.corners.forEach((c, cIdx) => {
-                    const dist = Math.hypot(c[0] - e.clientX, c[1] - e.clientY);
-                    if (dist < 25) {
+                    if (Math.hypot(c[0] - mouseX, c[1] - mouseY) < 20) {
                         activeSurfaceId = s.id;
-                        selectedCorner = { surfaceIndex: sIdx, cornerIndex: cIdx };
+                        selectedCorner = { sIdx, cIdx };
+                        updateUI();
                     }
                 });
             });
-            updateUI();
         });
 
         window.addEventListener('mousemove', (e) => {
-            if (selectedCorner !== null) {
-                surfaces[selectedCorner.surfaceIndex].corners[selectedCorner.cornerIndex] = [e.clientX, e.clientY];
-            }
+            if (!selectedCorner) return;
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = Math.max(0, Math.min(canvas.width, e.clientX - rect.left));
+            const mouseY = Math.max(0, Math.min(canvas.height, e.clientY - rect.top));
+            surfaces[selectedCorner.sIdx].corners[selectedCorner.cIdx] = [mouseX, mouseY];
         });
 
         window.addEventListener('mouseup', () => { selectedCorner = null; });
 
-        const positionBuffer = gl.createBuffer();
-        const texCoordBuffer = gl.createBuffer();
+        // Fullscreen Output Mode Toggle
+        document.getElementById('toggleOutputBtn').onclick = () => {
+            const overlay = document.getElementById('output-overlay');
+            const exitBtn = document.getElementById('exit-output');
+            overlay.style.display = 'block';
+            exitBtn.style.display = 'block';
+        };
 
-        gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-            0.0, 0.0,  1.0, 0.0,
-            0.0, 1.0,  1.0, 1.0,
-        ]), gl.STATIC_DRAW);
+        document.getElementById('exit-output').onclick = () => {
+            document.getElementById('output-overlay').style.display = 'none';
+            document.getElementById('exit-output').style.display = 'none';
+        };
+
+        // Buffers
+        const posBuffer = gl.createBuffer();
+        const texBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, texBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0,0, 1,0, 0,1, 1,1]), gl.STATIC_DRAW);
 
         function render() {
-            updateFallbackTexture();
-            gl.clearColor(0.05, 0.05, 0.05, 1.0);
+            updateDefaultTexture();
+            gl.clearColor(0.06, 0.06, 0.06, 1.0);
             gl.clear(gl.COLOR_BUFFER_BIT);
 
             surfaces.forEach(s => {
-                // Update texture from assigned media element (video, image, or procedural canvas)
                 gl.bindTexture(gl.TEXTURE_2D, s.texture);
-                if (s.mediaType === 'video' && s.mediaElement.readyState >= s.mediaElement.HAVE_CURRENT_DATA) {
+                if (s.mediaType === 'video' && s.mediaElement.readyState >= 2) {
                     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, s.mediaElement);
                 } else if (s.mediaType === 'image' && s.mediaElement.complete) {
                     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, s.mediaElement);
                 } else {
-                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, fallbackCanvas);
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, defaultTexCanvas);
                 }
 
-                gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+                gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
                 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
                     s.corners[0][0], s.corners[0][1],
                     s.corners[1][0], s.corners[1][1],
@@ -301,17 +344,16 @@
 
                 const posAttr = gl.getAttribLocation(program, "a_position");
                 gl.enableVertexAttribArray(posAttr);
-                gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
                 gl.vertexAttribPointer(posAttr, 2, gl.FLOAT, false, 0, 0);
 
                 const texAttr = gl.getAttribLocation(program, "a_texCoord");
                 gl.enableVertexAttribArray(texAttr);
-                gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
                 gl.vertexAttribPointer(texAttr, 2, gl.FLOAT, false, 0, 0);
 
                 gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
             });
 
+            // Draw corner handles on preview canvas for active surface
             requestAnimationFrame(render);
         }
 
